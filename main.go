@@ -2,29 +2,68 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v2"
 )
 
-// I'm declaring as vars so I can test easier, I recommend declaring these as constants
+func NewDefaultConfig() *Config {
+	return &Config{
+		SNS: SNSConfig{
+			TopicARN: "arn:aws:sns:us-west-2:123456789012:example-topic",
+			Region:   "us-west-2",
+		},
+		SQS: SQSConfig{
+			Region:   "us-west-2",
+			QueueARN: "arn:aws:sqs:us-west-2:193048895737",
+			QueueURL: "https://sqs.us-west-2.amazonaws.com/193048895737/somename",
+		},
+		S3Bucket: S3BucketConfig{
+			Region: "us-west-2",
+			Name:   "mybucket",
+			S3Path: ".deliverhalf.yaml",
+		},
+		Client: ClientConfig{
+			PushFrequency: "1m",
+		},
+	}
+}
+
+func ReadConfigFile(filename string) (*Config, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	data := make([]byte, stat.Size())
+	_, err = file.Read(data)
+	if err != nil {
+		return nil, err
+	}
+
+	config := &Config{}
+	err = yaml.Unmarshal(data, config)
+	if err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
 var (
-	// The name of our config file, without the file extension
-	// because viper supports many different config file
-	// languages.
-	defaultConfigFilename = "stingoftheviper"
-
-	// The environment variable prefix of all environment
-	// variables bound to our command line flags.
-
-	// For example, --number is bound to STING_NUMBER.
-	envPrefix = "STING"
-
-	// Replace hyphenated flag names with camelCase in the config
-	// file
+	defaultConfigFilename      = "stingoftheviper"
+	envPrefix                  = "STING"
 	replaceHyphenWithCamelCase = false
 )
 
@@ -35,123 +74,106 @@ func main() {
 	}
 }
 
-// Build the cobra command that handles our command line tool.
 func NewRootCommand() *cobra.Command {
-	// Store the result of binding cobra flags and viper config.
+	var cfg Config
 
-	// In a real application these would be data structures, most
-	// likely custom structs per command.
-
-	// This is simplified for the demo app and is not recommended
-	// that you use one-off variables.
-
-	// The point is that we aren't retrieving the values directly
-	// from viper or flags, we read the values from standard Go
-	// data structures.
-
-	color := ""
-	number := 0
-
-	// Define our command
 	rootCmd := &cobra.Command{
 		Use:   "stingoftheviper",
 		Short: "Cober and Viper together at last",
 		Long:  `Demonstrate how to get cobra flags to bind to viper properly`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// You can bind cobra and viper in a few
-			// locations, but PersistencePreRunE on the
-			// root command works well
-			return initializeConfig(cmd)
+			return initializeConfig(cmd, &cfg)
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			// Working with OutOrStdout/OutOrStderr allows
-			// us to unit test our command easier
 			out := cmd.OutOrStdout()
-
-			// Print the final resolved value from binding
-			// cobra flags and viper config
-			fmt.Fprintln(out, "Your favorite color is:", color)
-			fmt.Fprintln(out, "The magic number is:", number)
+			PrintConfigValues(out, &cfg)
 		},
 	}
-
-	// Define cobra flags, the default value has the lowest (least
-	// significant) precedence
-	rootCmd.Flags().IntVarP(&number, "number", "n", 7, "What is the magic number?")
-	rootCmd.Flags().StringVarP(&color, "favorite-color", "c", "red",
-		"Should come from flag first, then env var STING_FAVORITE_COLOR then the config file, then the default last")
 
 	return rootCmd
 }
 
-func initializeConfig(cmd *cobra.Command) error {
+func createViperInstance() *viper.Viper {
 	v := viper.New()
-
-	// Set the base name of the config file, without the file
-	// extension.
 	v.SetConfigName(defaultConfigFilename)
-
-	// Set as many paths as you like where viper should look for
-	// the config file. We are only looking in the current working
-	// directory.
 	v.AddConfigPath(".")
-
-	// Attempt to read the config file, gracefully ignoring errors
-	// caused by a config file not being found. Return an error
-	// if we cannot parse the config file.
-	if err := v.ReadInConfig(); err != nil {
-		// It's okay if there isn't a config file
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return err
-		}
-	}
-
-	// When we bind flags to environment variables expect that the
-	// environment variables are prefixed, e.g. a flag like --number
-	// binds to an environment variable STING_NUMBER. This helps
-	// avoid conflicts.
 	v.SetEnvPrefix(envPrefix)
-
-	// Environment variables can't have dashes in them, so bind
-	// them to their equivalent keys with underscores, e.g.
-	// --favorite-color to STING_FAVORITE_COLOR
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-
-	// Bind to environment variables
-
-	// Works great for simple config names, but needs help for
-	// names like --favorite-color which we fix in the bindFlags
-	// function
-	v.AutomaticEnv()
-
-	// Bind the current command's flags to viper
-	bindFlags(cmd, v)
-
-	return nil
+	return v
 }
 
-// Bind each cobra flag to its associated viper configuration (config
-// file and environment variable)
 func bindFlags(cmd *cobra.Command, v *viper.Viper) {
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		// Determine the naming convention of the flags when
-		// represented in the config file
-		configName := f.Name
-		// If using camelCase in the config file, replace
-		// hyphens with a camelCased string.
-
-		// Since viper does case-insensitive comparisons, we
-		// don't need to bother fixing the case, and only need
-		// to remove the hyphens.
-		if replaceHyphenWithCamelCase {
-			configName = strings.ReplaceAll(f.Name, "-", "")
-		}
-
-		// Apply the viper config value to the flag when the
-		// flag is not set and viper has a value
+		configName := getConfigName(f)
 		if !f.Changed && v.IsSet(configName) {
 			val := v.Get(configName)
 			cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
 		}
 	})
+}
+
+func getConfigName(f *pflag.Flag) string {
+	configName := f.Name
+	if replaceHyphenWithCamelCase {
+		configName = strings.ReplaceAll(f.Name, "-", "")
+	}
+	return configName
+}
+
+func PrintConfigValues(out io.Writer, cfg *Config) {
+	fmt.Fprintln(out, "Your favorite color is:", cfg.Client.PushFrequency)
+
+	// Print other example fields
+	fmt.Fprintln(out, "Example field:", cfg.S3Bucket.Name)
+}
+
+// SetDefaultConfigValues sets the default values for the Config struct
+func SetDefaultConfigValues(cfg *Config) {
+	defaultConfig := NewDefaultConfig()
+	cfg.SNS = defaultConfig.SNS
+	cfg.SQS = defaultConfig.SQS
+	cfg.S3Bucket = defaultConfig.S3Bucket
+	cfg.Client = defaultConfig.Client
+}
+
+// WriteDefaultConfigToFile writes the default Config struct to a YAML file if the file doesn't exist
+func WriteDefaultConfigToFile(cfg *Config, filename string) error {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		defaultConfigData, err := yaml.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal default config: %v", err)
+		}
+
+		err = os.WriteFile(filename, defaultConfigData, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to write default config file: %v", err)
+		}
+	}
+	return nil
+}
+
+func initializeConfig(cmd *cobra.Command, cfg *Config) error {
+	v := createViperInstance()
+
+	SetDefaultConfigValues(cfg)
+	// Check if the default config file exists
+	if err := WriteDefaultConfigToFile(cfg, defaultConfigFilename+".yaml"); err != nil {
+		return err
+	}
+
+	// Read the config file
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return err
+		}
+	}
+
+	v.AutomaticEnv()
+	bindFlags(cmd, v)
+
+	if err := v.Unmarshal(cfg); err != nil {
+		return err
+	}
+
+	return nil
 }
