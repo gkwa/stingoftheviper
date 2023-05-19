@@ -38,7 +38,7 @@ func TestPrecedence(t *testing.T) {
 				// Copy the config file into our temporary test directory
 				configB, err := os.ReadFile(filepath.Join(testDir, tc.configFile))
 				require.NoError(t, err, "error reading test config file")
-				err = os.WriteFile(filepath.Join(tmpDir, "stingoftheviper.toml"), configB, 0644)
+				err = os.WriteFile(filepath.Join(tmpDir, "stingoftheviper.toml"), configB, 0o644)
 				require.NoError(t, err, "error writing test config file")
 				defer os.Remove(filepath.Join(tmpDir, "stingoftheviper.toml"))
 

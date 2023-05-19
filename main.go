@@ -12,55 +12,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func NewDefaultConfig() *Config {
-	return &Config{
-		SNS: SNSConfig{
-			TopicARN: "arn:aws:sns:us-west-2:123456789012:example-topic",
-			Region:   "us-west-2",
-		},
-		SQS: SQSConfig{
-			Region:   "us-west-2",
-			QueueARN: "arn:aws:sqs:us-west-2:193048895737",
-			QueueURL: "https://sqs.us-west-2.amazonaws.com/193048895737/somename",
-		},
-		S3Bucket: S3BucketConfig{
-			Region: "us-west-2",
-			Name:   "mybucket",
-			S3Path: ".deliverhalf.yaml",
-		},
-		Client: ClientConfig{
-			PushFrequency: "1m",
-		},
-	}
-}
-
-func ReadConfigFile(filename string) (*Config, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	stat, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	data := make([]byte, stat.Size())
-	_, err = file.Read(data)
-	if err != nil {
-		return nil, err
-	}
-
-	config := &Config{}
-	err = yaml.Unmarshal(data, config)
-	if err != nil {
-		return nil, err
-	}
-
-	return config, nil
-}
-
 var (
 	defaultConfigFilename      = "stingoftheviper"
 	envPrefix                  = "STING"
@@ -70,6 +21,7 @@ var (
 func main() {
 	cmd := NewRootCommand()
 	if err := cmd.Execute(); err != nil {
+		fmt.Print(err)
 		os.Exit(1)
 	}
 }
@@ -121,48 +73,25 @@ func getConfigName(f *pflag.Flag) string {
 }
 
 func PrintConfigValues(out io.Writer, cfg *Config) {
-	fmt.Fprintln(out, "Your favorite color is:", cfg.Client.PushFrequency)
-
-	// Print other example fields
-	fmt.Fprintln(out, "Example field:", cfg.S3Bucket.Name)
-}
-
-// SetDefaultConfigValues sets the default values for the Config struct
-func SetDefaultConfigValues(cfg *Config) {
-	defaultConfig := NewDefaultConfig()
-	cfg.SNS = defaultConfig.SNS
-	cfg.SQS = defaultConfig.SQS
-	cfg.S3Bucket = defaultConfig.S3Bucket
-	cfg.Client = defaultConfig.Client
-}
-
-// WriteDefaultConfigToFile writes the default Config struct to a YAML file if the file doesn't exist
-func WriteDefaultConfigToFile(cfg *Config, filename string) error {
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		defaultConfigData, err := yaml.Marshal(cfg)
-		if err != nil {
-			return fmt.Errorf("failed to marshal default config: %v", err)
-		}
-
-		err = os.WriteFile(filename, defaultConfigData, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to write default config file: %v", err)
-		}
-	}
-	return nil
+	fmt.Fprintln(out, "client.push-frequency", cfg.Client.PushFrequency)
 }
 
 func initializeConfig(cmd *cobra.Command, cfg *Config) error {
 	v := createViperInstance()
 
 	SetDefaultConfigValues(cfg)
+
+	filePath := "stingoftheviper.yaml"
+
 	// Check if the default config file exists
-	if err := WriteDefaultConfigToFile(cfg, defaultConfigFilename+".yaml"); err != nil {
+	if err := WriteDefaultConfigToFile(cfg, filePath); err != nil {
 		return err
 	}
+	fmt.Printf("configfile: %s\n", filePath)
 
 	// Read the config file
 	if err := v.ReadInConfig(); err != nil {
+		fmt.Print(err)
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return err
 		}
@@ -175,5 +104,21 @@ func initializeConfig(cmd *cobra.Command, cfg *Config) error {
 		return err
 	}
 
+	file, err := os.Open(filePath)
+	if err != nil {
+		fmt.Printf("Error opening file: %v\n", err)
+		os.Exit(1)
+	}
+	defer file.Close()
+	decoder := yaml.NewDecoder(file)
+	err = decoder.Decode(&cfg)
+	if err != nil {
+		fmt.Printf("Error decoding YAML: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("region: %s\n", cfg.SNS.Region)
+
+	// Get the name of the configuration file
 	return nil
 }
