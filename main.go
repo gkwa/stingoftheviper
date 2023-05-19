@@ -9,11 +9,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"gopkg.in/yaml.v2"
 )
 
 var (
-	defaultConfigFilename      = "stingoftheviper"
 	envPrefix                  = "STING"
 	replaceHyphenWithCamelCase = false
 )
@@ -31,8 +29,8 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd := &cobra.Command{
 		Use:   "stingoftheviper",
-		Short: "Cober and Viper together at last",
-		Long:  `Demonstrate how to get cobra flags to bind to viper properly`,
+		Short: "Cobra and Viper together at last",
+		Long:  "Demonstrate how to get cobra flags to bind to viper properly",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return initializeConfig(cmd, &cfg)
 		},
@@ -45,9 +43,9 @@ func NewRootCommand() *cobra.Command {
 	return rootCmd
 }
 
-func createViperInstance() *viper.Viper {
+func createViperInstance(configFilename string) *viper.Viper {
 	v := viper.New()
-	v.SetConfigName(defaultConfigFilename)
+	v.SetConfigName(configFilename)
 	v.AddConfigPath(".")
 	v.SetEnvPrefix(envPrefix)
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
@@ -73,11 +71,14 @@ func getConfigName(f *pflag.Flag) string {
 }
 
 func PrintConfigValues(out io.Writer, cfg *Config) {
-	fmt.Fprintln(out, "client.push-frequency", cfg.Client.PushFrequency)
+	fmt.Fprintln(out, "s3bucket.name", cfg.S3Bucket.Name)
+	fmt.Fprintln(out, "client.pushfrequency", cfg.Client.PushFrequency)
+	fmt.Fprintln(out, "sqs.region", cfg.SNS.Region)
 }
 
 func initializeConfig(cmd *cobra.Command, cfg *Config) error {
-	v := createViperInstance()
+	defaultConfigFilename := "stingoftheviper"
+	v := createViperInstance(defaultConfigFilename)
 
 	SetDefaultConfigValues(cfg)
 
@@ -87,7 +88,6 @@ func initializeConfig(cmd *cobra.Command, cfg *Config) error {
 	if err := WriteDefaultConfigToFile(cfg, filePath); err != nil {
 		return err
 	}
-	fmt.Printf("configfile: %s\n", filePath)
 
 	// Read the config file
 	if err := v.ReadInConfig(); err != nil {
@@ -104,21 +104,5 @@ func initializeConfig(cmd *cobra.Command, cfg *Config) error {
 		return err
 	}
 
-	file, err := os.Open(filePath)
-	if err != nil {
-		fmt.Printf("Error opening file: %v\n", err)
-		os.Exit(1)
-	}
-	defer file.Close()
-	decoder := yaml.NewDecoder(file)
-	err = decoder.Decode(&cfg)
-	if err != nil {
-		fmt.Printf("Error decoding YAML: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("region: %s\n", cfg.SNS.Region)
-
-	// Get the name of the configuration file
 	return nil
 }
