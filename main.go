@@ -82,10 +82,8 @@ func initializeConfig(cmd *cobra.Command, cfg *Config) error {
 
 	SetDefaultConfigValues(cfg)
 
-	filePath := "stingoftheviper.yaml"
-
 	// Check if the default config file exists
-	if err := WriteDefaultConfigToFile(cfg, filePath); err != nil {
+	if err := WriteDefaultConfigToFile(cfg, defaultConfigFilename+".yaml"); err != nil {
 		return err
 	}
 
